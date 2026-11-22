@@ -250,6 +250,49 @@ def require_tls(ctx: Context, finding: Finding) -> Outcome:
     )
 
 
+# EC2.2 - VPC default security groups should not allow inbound or outbound traffic
+
+
+def empty_default_security_group(ctx: Context, finding: Finding) -> Outcome:
+    group_id = finding.resource_name
+    ec2 = ctx.client("ec2")
+    (group,) = ec2.describe_security_groups(GroupIds=[group_id])["SecurityGroups"]
+    if group["GroupName"] != "default":
+        raise Skipped(f"{group_id} is not a VPC default security group")
+    ctx.check_exemption(_tags(group.get("Tags", [])), f"security group {group_id}")
+
+    # Emptying a default group that is still attached would cut those resources
+    # off. Leave it to a person to move them to dedicated groups first.
+    in_use = ec2.describe_network_interfaces(Filters=[{"Name": "group-id", "Values": [group_id]}])[
+        "NetworkInterfaces"
+    ]
+    if in_use:
+        listed = ", ".join(ni["NetworkInterfaceId"] for ni in in_use[:5])
+        more = f" and {len(in_use) - 5} more" if len(in_use) > 5 else ""
+        raise Skipped(
+            f"default group {group_id} is still used by {len(in_use)} network interface(s) "
+            f"({listed}{more}); move them to dedicated groups first"
+        )
+
+    paginator = ec2.get_paginator("describe_security_group_rules")
+    pages = paginator.paginate(Filters=[{"Name": "group-id", "Values": [group_id]}])
+    rules = [r for page in pages for r in page["SecurityGroupRules"]]
+    ingress = [r["SecurityGroupRuleId"] for r in rules if not r["IsEgress"]]
+    egress = [r["SecurityGroupRuleId"] for r in rules if r["IsEgress"]]
+    if not rules:
+        return Outcome(False, f"default group {group_id} already has no rules")
+    if not ctx.dry_run:
+        if ingress:
+            ec2.revoke_security_group_ingress(GroupId=group_id, SecurityGroupRuleIds=ingress)
+        if egress:
+            ec2.revoke_security_group_egress(GroupId=group_id, SecurityGroupRuleIds=egress)
+    return Outcome(
+        True,
+        f"removed {len(ingress)} inbound and {len(egress)} outbound rule(s) "
+        f"from unused default group {group_id}",
+    )
+
+
 CONTROL_ACTIONS: dict[str, Action] = {
     "S3.1": block_account_public_access,
     "S3.8": block_bucket_public_access,
@@ -260,6 +303,7 @@ CONTROL_ACTIONS: dict[str, Action] = {
     "EC2.54": close_admin_ports,
     "KMS.4": enable_kms_key_rotation,
     "S3.5": require_tls,
+    "EC2.2": empty_default_security_group,
 }
 
 
