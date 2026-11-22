@@ -196,3 +196,29 @@ def test_exempt_kms_key_is_left_alone(run, securityhub):
 
     assert not kms.get_key_rotation_status(KeyId=arn)["KeyRotationEnabled"]
     assert securityhub.last()[0] == "NOTIFIED"
+
+
+# EC2.19
+
+
+def test_high_risk_ports_are_revoked_and_web_ports_kept(run, securityhub):
+    group = _group([_tcp(3306), _tcp(9200, "::/0"), _tcp(443), _tcp(80), _tcp(5432, "10.0.0.0/8")])
+    arn = f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group/{group}"
+
+    run(event(control_finding("EC2.19", "AwsEc2SecurityGroup", arn)))
+
+    assert _ingress(group) == [
+        ("tcp", 80, "0.0.0.0/0"),
+        ("tcp", 443, "0.0.0.0/0"),
+        ("tcp", 5432, "10.0.0.0/8"),
+    ]
+    assert "revoked 2 ingress rule(s)" in securityhub.last()[1]
+
+
+def test_admin_port_controls_do_not_touch_other_high_risk_ports(run):
+    group = _group([_tcp(22), _tcp(3306)])
+    arn = f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group/{group}"
+
+    run(event(control_finding("EC2.13", "AwsEc2SecurityGroup", arn)))
+
+    assert _ingress(group) == [("tcp", 3306, "0.0.0.0/0")]

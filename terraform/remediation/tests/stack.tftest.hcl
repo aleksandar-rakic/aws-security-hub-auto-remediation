@@ -26,10 +26,18 @@ run "safe_defaults" {
 
   assert {
     condition = (
-      jsondecode(aws_cloudwatch_event_rule.controls.event_pattern).detail.findings.Compliance.SecurityControlId
-      == local.supported_controls
+      toset(jsondecode(aws_cloudwatch_event_rule.controls.event_pattern).detail.findings.Compliance.SecurityControlId)
+      == setsubtract(local.supported_controls, local.opt_in_controls)
     )
-    error_message = "Without var.controls every supported control is remediated."
+    error_message = "Without var.controls every supported control except the opt-in ones is remediated."
+  }
+
+  assert {
+    condition = !contains(
+      jsondecode(aws_cloudwatch_event_rule.controls.event_pattern).detail.findings.Compliance.SecurityControlId,
+      "EC2.19"
+    )
+    error_message = "EC2.19 must stay opt-in."
   }
 
   assert {
@@ -86,6 +94,22 @@ run "quarantine_adds_its_own_rule" {
   assert {
     condition     = toset(keys(aws_cloudwatch_event_target.remediator)) == toset(["controls", "guardduty"])
     error_message = "Both rules must target the Lambda."
+  }
+}
+
+run "opt_in_control_can_be_selected" {
+  command = plan
+
+  variables {
+    controls = ["EC2.19"]
+  }
+
+  assert {
+    condition = (
+      jsondecode(aws_cloudwatch_event_rule.controls.event_pattern).detail.findings.Compliance.SecurityControlId
+      == ["EC2.19"]
+    )
+    error_message = "Listing EC2.19 explicitly must enable it."
   }
 }
 

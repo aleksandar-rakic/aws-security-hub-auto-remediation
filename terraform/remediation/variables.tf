@@ -10,7 +10,7 @@ variable "name" {
 }
 
 variable "controls" {
-  description = "Security Hub control IDs to remediate automatically. null (the default) means every supported control; start with a short list and widen it as you gain confidence."
+  description = "Security Hub control IDs to remediate automatically. null (the default) means every supported control except the opt-in ones (EC2.19); start with a short list and widen it as you gain confidence."
   type        = list(string)
   default     = null
 
