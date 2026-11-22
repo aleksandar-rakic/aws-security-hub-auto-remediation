@@ -429,6 +429,32 @@ def encrypt_queue(ctx: Context, finding: Finding) -> Outcome:
     return Outcome(True, f"turned on SQS-managed server-side encryption for queue {name}")
 
 
+# ECR.1 - ECR private repositories should have image scanning configured
+
+
+def scan_images_on_push(ctx: Context, finding: Finding) -> Outcome:
+    # arn:aws:ecr:<region>:<account>:repository/<name>; names may contain "/"
+    arn = finding.resource_id
+    registry = arn.split(":")[4]
+    name = arn.split(":repository/", 1)[1]
+    ecr = ctx.client("ecr")
+    tags = _tags(ecr.list_tags_for_resource(resourceArn=arn).get("tags", []))
+    ctx.check_exemption(tags, f"repository {name}")
+
+    (repository,) = ecr.describe_repositories(registryId=registry, repositoryNames=[name])[
+        "repositories"
+    ]
+    if repository.get("imageScanningConfiguration", {}).get("scanOnPush"):
+        return Outcome(False, f"repository {name} already scans images on push")
+    if not ctx.dry_run:
+        ecr.put_image_scanning_configuration(
+            registryId=registry,
+            repositoryName=name,
+            imageScanningConfiguration={"scanOnPush": True},
+        )
+    return Outcome(True, f"turned on scan on push for repository {name}")
+
+
 CONTROL_ACTIONS: dict[str, Action] = {
     "S3.1": block_account_public_access,
     "S3.8": block_bucket_public_access,
@@ -444,6 +470,7 @@ CONTROL_ACTIONS: dict[str, Action] = {
     "EC2.1": make_snapshots_private,
     "EC2.8": require_imdsv2,
     "SQS.1": encrypt_queue,
+    "ECR.1": scan_images_on_push,
 }
 
 
