@@ -24,7 +24,8 @@ from typing import Any
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from .actions import Context, Skipped, select_action
+from . import quarantine
+from .actions import Action, Context, Skipped, select_action
 from .findings import Finding
 
 log = logging.getLogger(__name__)
@@ -109,6 +110,12 @@ class Sessions:
         )
 
 
+def _select(finding: Finding) -> Action | None:
+    if quarantine.applies_to(finding):
+        return quarantine.quarantine_instance
+    return select_action(finding)
+
+
 def _update_finding(securityhub: Any, finding: Finding, status: str, note: str) -> bool:
     text = note if len(note) <= NOTE_LIMIT else note[: NOTE_LIMIT - 1] + "…"
     try:
@@ -151,7 +158,7 @@ def handle(
 
     for raw in raw_findings:
         finding = Finding.from_asff(raw)
-        action = select_action(finding)
+        action = _select(finding)
         if action is None:
             _log("ignored", finding)
             results.append({"finding": finding.id, "status": "ignored"})
