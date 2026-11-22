@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        root: [remediation, member-role]
+        root: [remediation, member-role, organization-guardrails]
     defaults:
       run:
         working-directory: terraform/${{ matrix.root }}
