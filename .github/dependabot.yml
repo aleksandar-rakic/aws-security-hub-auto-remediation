@@ -1,0 +1,34 @@
+version: 2
+updates:
+  # Action SHAs are pinned in .github/workflows; Dependabot updates the SHA and the version comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Test tooling only; the Lambda uses the boto3 that ships with its runtime.
+  - package-ecosystem: pip
+    directory: /remediator
+    schedule:
+      interval: weekly
+    groups:
+      dev:
+        patterns: ["*"]
+
+  # Dependabot widens "~>" ranges for Terraform, so major upgrades are held
+  # back by version range: they need a planned migration, not a bot PR.
+  - package-ecosystem: terraform
+    directories:
+      - /terraform/remediation
+      - /terraform/member-role
+      - /terraform/organization-guardrails
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "hashicorp/aws"
+        versions: [">= 7.0.0"]
+      - dependency-name: "hashicorp/archive"
+        versions: [">= 3.0.0"]
