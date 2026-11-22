@@ -13,6 +13,7 @@
         "kms:GetKeyRotationStatus",
         "kms:ListResourceTags",
         "s3:GetAccountPublicAccessBlock",
+        "s3:GetBucketPolicy",
         "s3:GetBucketPublicAccessBlock",
         "s3:GetBucketTagging"
       ],
@@ -56,6 +57,12 @@
         "ec2:RevokeSecurityGroupEgress"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "S3RequireTls",
+      "Effect": "Allow",
+      "Action": "s3:PutBucketPolicy",
+      "Resource": "arn:*:s3:::*"
     }
   ]
 }

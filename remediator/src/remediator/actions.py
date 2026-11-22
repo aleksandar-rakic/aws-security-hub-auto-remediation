@@ -7,6 +7,7 @@ run it reads and reports but never writes.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -73,19 +74,22 @@ def ec2_tags(ec2: Any, resource_id: str) -> dict[str, str]:
     return _tags(resp["Tags"])
 
 
+def _bucket_tags(s3: Any, bucket: str) -> dict[str, str]:
+    try:
+        return _tags(s3.get_bucket_tagging(Bucket=bucket)["TagSet"])
+    except ClientError as exc:
+        if _error_code(exc) != "NoSuchTagSet":
+            raise
+        return {}
+
+
 # S3.8 - S3 general purpose buckets should block public access
 
 
 def block_bucket_public_access(ctx: Context, finding: Finding) -> Outcome:
     bucket = finding.resource_name
     s3 = ctx.client("s3")
-    try:
-        tags = _tags(s3.get_bucket_tagging(Bucket=bucket)["TagSet"])
-    except ClientError as exc:
-        if _error_code(exc) != "NoSuchTagSet":
-            raise
-        tags = {}
-    ctx.check_exemption(tags, f"bucket {bucket}")
+    ctx.check_exemption(_bucket_tags(s3, bucket), f"bucket {bucket}")
 
     try:
         current = s3.get_public_access_block(Bucket=bucket)["PublicAccessBlockConfiguration"]
@@ -192,6 +196,60 @@ def enable_kms_key_rotation(ctx: Context, finding: Finding) -> Outcome:
     return Outcome(True, f"turned on automatic rotation for key {finding.resource_name}")
 
 
+# S3.5 - S3 general purpose buckets should require requests to use SSL
+
+TLS_STATEMENT_SID = "DenyInsecureTransport"
+
+
+def _denies_insecure_transport(statement: dict[str, Any]) -> bool:
+    if statement.get("Effect") != "Deny":
+        return False
+    conditions = statement.get("Condition") or {}
+    for operator, values in conditions.items():
+        if operator.lower() != "bool":
+            continue
+        for key, value in values.items():
+            flag = value[0] if isinstance(value, list) and len(value) == 1 else value
+            if key.lower() == "aws:securetransport" and str(flag).lower() == "false":
+                return True
+    return False
+
+
+def require_tls(ctx: Context, finding: Finding) -> Outcome:
+    bucket = finding.resource_name
+    s3 = ctx.client("s3")
+    ctx.check_exemption(_bucket_tags(s3, bucket), f"bucket {bucket}")
+
+    try:
+        policy = json.loads(s3.get_bucket_policy(Bucket=bucket)["Policy"])
+    except ClientError as exc:
+        if _error_code(exc) != "NoSuchBucketPolicy":
+            raise
+        policy = {"Version": "2012-10-17", "Statement": []}
+    statements = policy.get("Statement", [])
+    if isinstance(statements, dict):
+        statements = [statements]
+    if any(_denies_insecure_transport(s) for s in statements):
+        return Outcome(False, f"bucket {bucket} already denies requests without TLS")
+
+    arn = f"arn:{finding.partition}:s3:::{bucket}"
+    deny = {
+        "Sid": TLS_STATEMENT_SID,
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [arn, f"{arn}/*"],
+        "Condition": {"Bool": {"aws:SecureTransport": "false"}},
+    }
+    if not ctx.dry_run:
+        policy["Statement"] = [*statements, deny]
+        s3.put_bucket_policy(Bucket=bucket, Policy=json.dumps(policy))
+    kept = f", keeping its {len(statements)} existing statement(s)" if statements else ""
+    return Outcome(
+        True, f"added a deny-without-TLS statement to the policy of bucket {bucket}{kept}"
+    )
+
+
 CONTROL_ACTIONS: dict[str, Action] = {
     "S3.1": block_account_public_access,
     "S3.8": block_bucket_public_access,
@@ -201,6 +259,7 @@ CONTROL_ACTIONS: dict[str, Action] = {
     "EC2.53": close_admin_ports,
     "EC2.54": close_admin_ports,
     "KMS.4": enable_kms_key_rotation,
+    "S3.5": require_tls,
 }
 
 
