@@ -455,6 +455,46 @@ def scan_images_on_push(ctx: Context, finding: Finding) -> Outcome:
     return Outcome(True, f"turned on scan on push for repository {name}")
 
 
+# RDS.1 - RDS snapshot should be private (DB instance and DB cluster snapshots)
+
+
+def make_db_snapshot_private(ctx: Context, finding: Finding) -> Outcome:
+    # arn:aws:rds:<region>:<account>:snapshot:<id> or ...:cluster-snapshot:<id>
+    arn = finding.resource_id
+    kind, snapshot_id = arn.split(":")[5:7]
+    rds = ctx.client("rds")
+    tags = _tags(rds.list_tags_for_resource(ResourceName=arn).get("TagList", []))
+    ctx.check_exemption(tags, f"snapshot {snapshot_id}")
+
+    if kind == "cluster-snapshot":
+        attributes = rds.describe_db_cluster_snapshot_attributes(
+            DBClusterSnapshotIdentifier=snapshot_id
+        )["DBClusterSnapshotAttributesResult"]["DBClusterSnapshotAttributes"]
+    else:
+        attributes = rds.describe_db_snapshot_attributes(DBSnapshotIdentifier=snapshot_id)[
+            "DBSnapshotAttributesResult"
+        ]["DBSnapshotAttributes"]
+    restore = next((a for a in attributes if a["AttributeName"] == "restore"), {})
+    shared = restore.get("AttributeValues", [])
+    if "all" not in shared:
+        return Outcome(False, f"snapshot {snapshot_id} is not public")
+
+    if not ctx.dry_run:
+        if kind == "cluster-snapshot":
+            rds.modify_db_cluster_snapshot_attribute(
+                DBClusterSnapshotIdentifier=snapshot_id,
+                AttributeName="restore",
+                ValuesToRemove=["all"],
+            )
+        else:
+            rds.modify_db_snapshot_attribute(
+                DBSnapshotIdentifier=snapshot_id, AttributeName="restore", ValuesToRemove=["all"]
+            )
+    accounts = [v for v in shared if v != "all"]
+    kept = f"; still shared with {', '.join(accounts)}" if accounts else ""
+    return Outcome(True, f"made {kind} {snapshot_id} private{kept}")
+
+
 CONTROL_ACTIONS: dict[str, Action] = {
     "S3.1": block_account_public_access,
     "S3.8": block_bucket_public_access,
@@ -471,6 +511,7 @@ CONTROL_ACTIONS: dict[str, Action] = {
     "EC2.8": require_imdsv2,
     "SQS.1": encrypt_queue,
     "ECR.1": scan_images_on_push,
+    "RDS.1": make_db_snapshot_private,
 }
 
 

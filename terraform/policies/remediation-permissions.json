@@ -18,6 +18,9 @@
         "ecr:ListTagsForResource",
         "kms:GetKeyRotationStatus",
         "kms:ListResourceTags",
+        "rds:DescribeDBClusterSnapshotAttributes",
+        "rds:DescribeDBSnapshotAttributes",
+        "rds:ListTagsForResource",
         "s3:GetAccountPublicAccessBlock",
         "s3:GetBucketPolicy",
         "s3:GetBucketPublicAccessBlock",
@@ -99,6 +102,18 @@
       "Effect": "Allow",
       "Action": "ecr:PutImageScanningConfiguration",
       "Resource": "arn:*:ecr:*:*:repository/*"
+    },
+    {
+      "Sid": "PrivateDbSnapshots",
+      "Effect": "Allow",
+      "Action": [
+        "rds:ModifyDBClusterSnapshotAttribute",
+        "rds:ModifyDBSnapshotAttribute"
+      ],
+      "Resource": [
+        "arn:*:rds:*:*:cluster-snapshot:*",
+        "arn:*:rds:*:*:snapshot:*"
+      ]
     }
   ]
 }
