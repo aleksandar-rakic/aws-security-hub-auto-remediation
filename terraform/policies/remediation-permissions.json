@@ -1,0 +1,61 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadStateAndExemptionTags",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeSecurityGroupRules",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeTags",
+        "ec2:GetEbsEncryptionByDefault",
+        "kms:GetKeyRotationStatus",
+        "kms:ListResourceTags",
+        "s3:GetAccountPublicAccessBlock",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketTagging"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3BlockPublicAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutAccountPublicAccessBlock",
+        "s3:PutBucketPublicAccessBlock"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloseAdminPorts",
+      "Effect": "Allow",
+      "Action": "ec2:RevokeSecurityGroupIngress",
+      "Resource": "arn:*:ec2:*:*:security-group/*"
+    },
+    {
+      "Sid": "EbsDefaultEncryption",
+      "Effect": "Allow",
+      "Action": "ec2:EnableEbsEncryptionByDefault",
+      "Resource": "*"
+    },
+    {
+      "Sid": "KmsKeyRotation",
+      "Effect": "Allow",
+      "Action": "kms:EnableKeyRotation",
+      "Resource": "arn:*:kms:*:*:key/*"
+    },
+    {
+      "Sid": "QuarantineInstance",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateSnapshot",
+        "ec2:CreateTags",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:RevokeSecurityGroupEgress"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
