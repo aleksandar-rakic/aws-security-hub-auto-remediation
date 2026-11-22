@@ -26,6 +26,45 @@ jobs:
       - run: ruff check .
       - run: pytest
 
+  terraform:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root: [remediation, member-role]
+    defaults:
+      run:
+        working-directory: terraform/${{ matrix.root }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.14.0
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+      - name: terraform test
+        run: |
+          if [ -d tests ]; then terraform test; else echo "no tests in ${{ matrix.root }}"; fi
+      - uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4.1.1
+        with:
+          tflint_version: v0.66.0
+      - name: tflint
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # avoids rate limits when downloading the aws ruleset
+        run: |
+          tflint --init
+          tflint --format compact
+
+  policies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: IAM policy is valid JSON without wildcard actions
+        run: |
+          jq -e '.Statement | all(.Action | if type == "array" then all(test("\\*") | not) else test("\\*") | not end)' \
+            terraform/policies/remediation-permissions.json
+
   workflows:
     runs-on: ubuntu-latest
     steps:
