@@ -10,15 +10,13 @@ variable "name" {
 }
 
 variable "controls" {
-  description = "Security Hub control IDs to remediate automatically. Start small and widen as you gain confidence."
+  description = "Security Hub control IDs to remediate automatically. null (the default) means every supported control; start with a short list and widen it as you gain confidence."
   type        = list(string)
-  default     = ["EC2.7", "EC2.13", "EC2.14", "EC2.53", "EC2.54", "KMS.4", "S3.1", "S3.8"]
+  default     = null
 
   validation {
-    condition = alltrue([
-      for c in var.controls : contains(["EC2.7", "EC2.13", "EC2.14", "EC2.53", "EC2.54", "KMS.4", "S3.1", "S3.8"], c)
-    ])
-    error_message = "Supported controls: EC2.7, EC2.13, EC2.14, EC2.53, EC2.54, KMS.4, S3.1, S3.8."
+    condition     = var.controls == null || alltrue([for c in coalesce(var.controls, []) : contains(local.supported_controls, c)])
+    error_message = "Supported controls: ${join(", ", local.supported_controls)}."
   }
 }
 

@@ -25,6 +25,14 @@ run "safe_defaults" {
   }
 
   assert {
+    condition = (
+      jsondecode(aws_cloudwatch_event_rule.controls.event_pattern).detail.findings.Compliance.SecurityControlId
+      == local.supported_controls
+    )
+    error_message = "Without var.controls every supported control is remediated."
+  }
+
+  assert {
     condition     = length(aws_cloudwatch_event_rule.guardduty) == 0
     error_message = "The GuardDuty quarantine rule must not exist unless quarantine is enabled."
   }
