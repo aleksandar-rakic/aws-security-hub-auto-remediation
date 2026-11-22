@@ -145,7 +145,14 @@ def enable_ebs_default_encryption(ctx: Context, finding: Finding) -> Outcome:
 # from 0.0.0.0/0 or ::/0 to the remote administration ports
 
 
-def _opens_admin_port(rule: dict[str, Any]) -> bool:
+# EC2.19 - Security groups should not allow unrestricted access to ports with high risk
+HIGH_RISK_PORTS = (
+    20, 21, 22, 23, 25, 110, 135, 143, 445, 1433, 1434, 3000, 3306, 3389,
+    4333, 5000, 5432, 5500, 5601, 8080, 8088, 8888, 9200, 9300,
+)  # fmt: skip
+
+
+def _opens_to_anywhere(rule: dict[str, Any], ports: tuple[int, ...]) -> bool:
     if rule.get("IsEgress"):
         return False
     if rule.get("CidrIpv4") not in ANYWHERE and rule.get("CidrIpv6") not in ANYWHERE:
@@ -156,19 +163,21 @@ def _opens_admin_port(rule: dict[str, Any]) -> bool:
     if protocol not in ("tcp", "udp", "6", "17"):
         return False
     low, high = rule.get("FromPort", -1), rule.get("ToPort", -1)
-    return any(low <= port <= high for port in ADMIN_PORTS)
+    return any(low <= port <= high for port in ports)
 
 
-def close_admin_ports(ctx: Context, finding: Finding) -> Outcome:
+def _close_ports(ctx: Context, finding: Finding, ports: tuple[int, ...], label: str) -> Outcome:
     group_id = finding.resource_name
     ec2 = ctx.client("ec2")
     ctx.check_exemption(ec2_tags(ec2, group_id), f"security group {group_id}")
 
     paginator = ec2.get_paginator("describe_security_group_rules")
     pages = paginator.paginate(Filters=[{"Name": "group-id", "Values": [group_id]}])
-    offending = [r for page in pages for r in page["SecurityGroupRules"] if _opens_admin_port(r)]
+    offending = [
+        r for page in pages for r in page["SecurityGroupRules"] if _opens_to_anywhere(r, ports)
+    ]
     if not offending:
-        return Outcome(False, f"{group_id} has no ingress from anywhere to ports 22 or 3389")
+        return Outcome(False, f"{group_id} has no ingress from anywhere to {label}")
 
     described = ", ".join(
         f"{r['SecurityGroupRuleId']} ({r['IpProtocol']} {r.get('FromPort')}-{r.get('ToPort')} "
@@ -180,6 +189,14 @@ def close_admin_ports(ctx: Context, finding: Finding) -> Outcome:
             GroupId=group_id, SecurityGroupRuleIds=[r["SecurityGroupRuleId"] for r in offending]
         )
     return Outcome(True, f"revoked {len(offending)} ingress rule(s) on {group_id}: {described}")
+
+
+def close_admin_ports(ctx: Context, finding: Finding) -> Outcome:
+    return _close_ports(ctx, finding, ADMIN_PORTS, "ports 22 or 3389")
+
+
+def close_high_risk_ports(ctx: Context, finding: Finding) -> Outcome:
+    return _close_ports(ctx, finding, HIGH_RISK_PORTS, "the EC2.19 high-risk ports")
 
 
 # KMS.4 - AWS KMS key rotation should be enabled
@@ -420,6 +437,7 @@ CONTROL_ACTIONS: dict[str, Action] = {
     "EC2.14": close_admin_ports,
     "EC2.53": close_admin_ports,
     "EC2.54": close_admin_ports,
+    "EC2.19": close_high_risk_ports,
     "KMS.4": enable_kms_key_rotation,
     "S3.5": require_tls,
     "EC2.2": empty_default_security_group,
