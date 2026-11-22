@@ -1,0 +1,14 @@
+# Terraform
+.terraform/
+.build/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# Python
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
