@@ -9,6 +9,8 @@
         "ec2:DescribeNetworkInterfaces",
         "ec2:DescribeSecurityGroupRules",
         "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSnapshotAttribute",
+        "ec2:DescribeSnapshots",
         "ec2:DescribeTags",
         "ec2:GetEbsEncryptionByDefault",
         "kms:GetKeyRotationStatus",
@@ -67,6 +69,12 @@
       "Effect": "Allow",
       "Action": "s3:PutBucketPolicy",
       "Resource": "arn:*:s3:::*"
+    },
+    {
+      "Sid": "PrivateSnapshots",
+      "Effect": "Allow",
+      "Action": "ec2:ModifySnapshotAttribute",
+      "Resource": "arn:*:ec2:*::snapshot/*"
     }
   ]
 }

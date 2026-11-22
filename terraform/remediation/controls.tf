@@ -2,6 +2,7 @@
 # remediator/src/remediator/actions.py; a pytest compares the two.
 locals {
   supported_controls = [
+    "EC2.1",
     "EC2.2",
     "EC2.7",
     "EC2.13",

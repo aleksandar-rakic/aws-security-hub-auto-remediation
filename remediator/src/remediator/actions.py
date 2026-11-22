@@ -293,6 +293,48 @@ def empty_default_security_group(ctx: Context, finding: Finding) -> Outcome:
     )
 
 
+# EC2.1 - EBS snapshots should not be publicly restorable
+# (evaluated per account and region, so the finding names the account)
+
+
+def _is_public(ec2: Any, snapshot_id: str) -> bool:
+    permissions = ec2.describe_snapshot_attribute(
+        SnapshotId=snapshot_id, Attribute="createVolumePermission"
+    )["CreateVolumePermissions"]
+    return any(p.get("Group") == "all" for p in permissions)
+
+
+def make_snapshots_private(ctx: Context, finding: Finding) -> Outcome:
+    ec2 = ctx.client("ec2")
+    paginator = ec2.get_paginator("describe_snapshots")
+    pages = paginator.paginate(OwnerIds=["self"], RestorableByUserIds=["all"])
+    candidates = [s for page in pages for s in page["Snapshots"]]
+    public = [s for s in candidates if _is_public(ec2, s["SnapshotId"])]
+
+    exempt = [s["SnapshotId"] for s in public if ctx.exempt(_tags(s.get("Tags", [])))]
+    to_fix = [s["SnapshotId"] for s in public if s["SnapshotId"] not in exempt]
+    if not to_fix:
+        if exempt:
+            raise Skipped(
+                f"only exempt snapshots are public in {finding.region}: {', '.join(exempt)}"
+            )
+        return Outcome(False, f"no publicly restorable snapshots in {finding.region}")
+
+    if not ctx.dry_run:
+        for snapshot_id in to_fix:
+            ec2.modify_snapshot_attribute(
+                SnapshotId=snapshot_id,
+                Attribute="createVolumePermission",
+                OperationType="remove",
+                GroupNames=["all"],
+            )
+    kept = f"; left exempt {', '.join(exempt)} public" if exempt else ""
+    return Outcome(
+        True,
+        f"made {len(to_fix)} snapshot(s) private in {finding.region}: {', '.join(to_fix)}{kept}",
+    )
+
+
 CONTROL_ACTIONS: dict[str, Action] = {
     "S3.1": block_account_public_access,
     "S3.8": block_bucket_public_access,
@@ -304,6 +346,7 @@ CONTROL_ACTIONS: dict[str, Action] = {
     "KMS.4": enable_kms_key_rotation,
     "S3.5": require_tls,
     "EC2.2": empty_default_security_group,
+    "EC2.1": make_snapshots_private,
 }
 
 
