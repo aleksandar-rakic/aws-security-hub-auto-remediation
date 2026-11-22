@@ -1,0 +1,210 @@
+"""Remediation actions for Security Hub controls.
+
+Every action is idempotent: it reads the current state first, changes it only
+when it is non-compliant, and reports whether it changed anything. Under dry
+run it reads and reports but never writes.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+from botocore.exceptions import ClientError
+
+from .findings import Finding
+
+FULL_BLOCK = {
+    "BlockPublicAcls": True,
+    "IgnorePublicAcls": True,
+    "BlockPublicPolicy": True,
+    "RestrictPublicBuckets": True,
+}
+ADMIN_PORTS = (22, 3389)
+ANYWHERE = ("0.0.0.0/0", "::/0")
+
+
+class Skipped(Exception):
+    """The finding is left for a person: the resource is exempt or out of reach."""
+
+
+@dataclass(frozen=True)
+class Outcome:
+    changed: bool
+    summary: str
+
+
+@dataclass
+class Context:
+    session: Any  # boto3.Session in the finding's account and region
+    dry_run: bool
+    exemption_key: str
+    exemption_value: str
+    quarantine_enabled: bool = False
+    _clients: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    def client(self, service: str) -> Any:
+        if service not in self._clients:
+            self._clients[service] = self.session.client(service)
+        return self._clients[service]
+
+    def exempt(self, tags: dict[str, str]) -> bool:
+        return tags.get(self.exemption_key, "").lower() == self.exemption_value.lower()
+
+    def check_exemption(self, tags: dict[str, str], what: str) -> None:
+        if self.exempt(tags):
+            raise Skipped(f"{what} is tagged {self.exemption_key}={self.exemption_value}")
+
+
+Action = Callable[[Context, Finding], Outcome]
+
+
+def _error_code(exc: ClientError) -> str:
+    return exc.response.get("Error", {}).get("Code", "")
+
+
+def _tags(pairs: list[dict[str, str]], key: str = "Key", value: str = "Value") -> dict[str, str]:
+    return {p[key]: p[value] for p in pairs}
+
+
+def ec2_tags(ec2: Any, resource_id: str) -> dict[str, str]:
+    resp = ec2.describe_tags(Filters=[{"Name": "resource-id", "Values": [resource_id]}])
+    return _tags(resp["Tags"])
+
+
+# S3.8 - S3 general purpose buckets should block public access
+
+
+def block_bucket_public_access(ctx: Context, finding: Finding) -> Outcome:
+    bucket = finding.resource_name
+    s3 = ctx.client("s3")
+    try:
+        tags = _tags(s3.get_bucket_tagging(Bucket=bucket)["TagSet"])
+    except ClientError as exc:
+        if _error_code(exc) != "NoSuchTagSet":
+            raise
+        tags = {}
+    ctx.check_exemption(tags, f"bucket {bucket}")
+
+    try:
+        current = s3.get_public_access_block(Bucket=bucket)["PublicAccessBlockConfiguration"]
+    except ClientError as exc:
+        if _error_code(exc) != "NoSuchPublicAccessBlockConfiguration":
+            raise
+        current = {}
+    if current == FULL_BLOCK:
+        return Outcome(False, f"bucket {bucket} already blocks all public access")
+    if not ctx.dry_run:
+        s3.put_public_access_block(Bucket=bucket, PublicAccessBlockConfiguration=FULL_BLOCK)
+    return Outcome(True, f"turned on all four public access block settings on bucket {bucket}")
+
+
+# S3.1 - S3 general purpose buckets should have block public access settings enabled
+# (the account-level setting)
+
+
+def block_account_public_access(ctx: Context, finding: Finding) -> Outcome:
+    s3control = ctx.client("s3control")
+    account = finding.account_id
+    try:
+        current = s3control.get_public_access_block(AccountId=account)[
+            "PublicAccessBlockConfiguration"
+        ]
+    except ClientError as exc:
+        if _error_code(exc) != "NoSuchPublicAccessBlockConfiguration":
+            raise
+        current = {}
+    if current == FULL_BLOCK:
+        return Outcome(False, f"account {account} already blocks all S3 public access")
+    if not ctx.dry_run:
+        s3control.put_public_access_block(
+            AccountId=account, PublicAccessBlockConfiguration=FULL_BLOCK
+        )
+    return Outcome(True, f"turned on account-level S3 public access block in {account}")
+
+
+# EC2.7 - EBS default encryption should be enabled
+
+
+def enable_ebs_default_encryption(ctx: Context, finding: Finding) -> Outcome:
+    ec2 = ctx.client("ec2")
+    if ec2.get_ebs_encryption_by_default()["EbsEncryptionByDefault"]:
+        return Outcome(False, f"EBS default encryption is already on in {finding.region}")
+    if not ctx.dry_run:
+        ec2.enable_ebs_encryption_by_default()
+    return Outcome(True, f"turned on EBS default encryption in {finding.region}")
+
+
+# EC2.13 / EC2.14 / EC2.53 / EC2.54 - security groups should not allow ingress
+# from 0.0.0.0/0 or ::/0 to the remote administration ports
+
+
+def _opens_admin_port(rule: dict[str, Any]) -> bool:
+    if rule.get("IsEgress"):
+        return False
+    if rule.get("CidrIpv4") not in ANYWHERE and rule.get("CidrIpv6") not in ANYWHERE:
+        return False
+    protocol = str(rule.get("IpProtocol"))
+    if protocol == "-1":
+        return True
+    if protocol not in ("tcp", "udp", "6", "17"):
+        return False
+    low, high = rule.get("FromPort", -1), rule.get("ToPort", -1)
+    return any(low <= port <= high for port in ADMIN_PORTS)
+
+
+def close_admin_ports(ctx: Context, finding: Finding) -> Outcome:
+    group_id = finding.resource_name
+    ec2 = ctx.client("ec2")
+    ctx.check_exemption(ec2_tags(ec2, group_id), f"security group {group_id}")
+
+    paginator = ec2.get_paginator("describe_security_group_rules")
+    pages = paginator.paginate(Filters=[{"Name": "group-id", "Values": [group_id]}])
+    offending = [r for page in pages for r in page["SecurityGroupRules"] if _opens_admin_port(r)]
+    if not offending:
+        return Outcome(False, f"{group_id} has no ingress from anywhere to ports 22 or 3389")
+
+    described = ", ".join(
+        f"{r['SecurityGroupRuleId']} ({r['IpProtocol']} {r.get('FromPort')}-{r.get('ToPort')} "
+        f"from {r.get('CidrIpv4') or r.get('CidrIpv6')})"
+        for r in offending
+    )
+    if not ctx.dry_run:
+        ec2.revoke_security_group_ingress(
+            GroupId=group_id, SecurityGroupRuleIds=[r["SecurityGroupRuleId"] for r in offending]
+        )
+    return Outcome(True, f"revoked {len(offending)} ingress rule(s) on {group_id}: {described}")
+
+
+# KMS.4 - AWS KMS key rotation should be enabled
+
+
+def enable_kms_key_rotation(ctx: Context, finding: Finding) -> Outcome:
+    key = finding.resource_id
+    kms = ctx.client("kms")
+    tags = _tags(kms.list_resource_tags(KeyId=key).get("Tags", []), "TagKey", "TagValue")
+    ctx.check_exemption(tags, f"key {finding.resource_name}")
+    if kms.get_key_rotation_status(KeyId=key)["KeyRotationEnabled"]:
+        return Outcome(False, f"rotation is already on for key {finding.resource_name}")
+    if not ctx.dry_run:
+        kms.enable_key_rotation(KeyId=key)
+    return Outcome(True, f"turned on automatic rotation for key {finding.resource_name}")
+
+
+CONTROL_ACTIONS: dict[str, Action] = {
+    "S3.1": block_account_public_access,
+    "S3.8": block_bucket_public_access,
+    "EC2.7": enable_ebs_default_encryption,
+    "EC2.13": close_admin_ports,
+    "EC2.14": close_admin_ports,
+    "EC2.53": close_admin_ports,
+    "EC2.54": close_admin_ports,
+    "KMS.4": enable_kms_key_rotation,
+}
+
+
+def select_action(finding: Finding) -> Action | None:
+    if finding.control_id in CONTROL_ACTIONS:
+        return CONTROL_ACTIONS[finding.control_id]
+    return None
