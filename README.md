@@ -69,6 +69,7 @@ flowchart LR
 | [EC2.8](https://docs.aws.amazon.com/securityhub/latest/userguide/ec2-controls.html#ec2-8) | An instance allows IMDSv1 | Set `HttpTokens=required`, but only when CloudWatch `MetadataNoToken` shows no IMDSv1 calls in the last 14 days; otherwise the finding asks for the software to be updated first |
 | [SQS.1](https://docs.aws.amazon.com/securityhub/latest/userguide/sqs-controls.html#sqs-1) | A queue is not encrypted at rest | Turn on SQS-managed encryption (SSE-SQS), which needs no key policy changes; queues already on a KMS key are left alone |
 | [EC2.19](https://docs.aws.amazon.com/securityhub/latest/userguide/ec2-controls.html#ec2-19) | A security group allows `0.0.0.0/0` or `::/0` to a high-risk port (FTP, Telnet, SMB, databases, Elasticsearch, 8080, ...) | **Opt-in** (`controls` must list it). Revoke exactly those rules; a service that is meant to be public gets the exemption tag |
+| [ECR.1](https://docs.aws.amazon.com/securityhub/latest/userguide/ecr-controls.html#ecr-1) | A private repository does not scan images | Turn on scan on push for that repository (nested names such as `team/app` included) |
 | GuardDuty, HIGH / CRITICAL, `AwsEc2Instance` | An instance is likely compromised | **Opt-in.** Snapshot its EBS volumes, move it into a no-traffic security group, tag it with its previous groups. The instance keeps running for forensics. |
 
 Adding a control is one function in [`remediator/src/remediator/actions.py`](remediator/src/remediator/actions.py),

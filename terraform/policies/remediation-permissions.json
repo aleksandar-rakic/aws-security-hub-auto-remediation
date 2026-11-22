@@ -14,6 +14,8 @@
         "ec2:DescribeSnapshots",
         "ec2:DescribeTags",
         "ec2:GetEbsEncryptionByDefault",
+        "ecr:DescribeRepositories",
+        "ecr:ListTagsForResource",
         "kms:GetKeyRotationStatus",
         "kms:ListResourceTags",
         "s3:GetAccountPublicAccessBlock",
@@ -91,6 +93,12 @@
       "Effect": "Allow",
       "Action": "sqs:SetQueueAttributes",
       "Resource": "arn:*:sqs:*:*:*"
+    },
+    {
+      "Sid": "EcrScanOnPush",
+      "Effect": "Allow",
+      "Action": "ecr:PutImageScanningConfiguration",
+      "Resource": "arn:*:ecr:*:*:repository/*"
     }
   ]
 }
