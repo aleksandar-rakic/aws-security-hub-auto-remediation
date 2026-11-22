@@ -1,0 +1,28 @@
+# Copy to terraform.tfvars (git-ignored) and adjust.
+
+# Security Hub administrator / aggregation region.
+region = "eu-central-1"
+
+# Start with the controls whose fixes nobody will miss, in dry run.
+# Remove the line (or set null) for every supported control except opt-in EC2.19.
+controls = ["S3.1", "S3.8", "EC2.7", "KMS.4", "SQS.1", "ECR.1"]
+
+dry_run            = true
+quarantine_enabled = false
+
+# Deployed to every member account by ../member-role.
+member_role_name = "security-hub-remediation-member"
+
+exemption_tag = {
+  key   = "auto-remediation"
+  value = "skip"
+}
+
+reserved_concurrency = 5
+log_retention_days   = 365
+alarm_actions        = ["arn:aws:sns:eu-central-1:111111111111:security-alerts"]
+
+tags = {
+  project = "security-hub-auto-remediation"
+  owner   = "platform-security"
+}

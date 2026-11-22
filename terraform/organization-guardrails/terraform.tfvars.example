@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (git-ignored) and adjust. Run from the management account.
+
+# Attach to a sandbox OU first, then widen. The organization root is rejected on purpose.
+target_ids = ["ou-ab12-sandbox1"]
+
+# Who may still change what the policies protect: break-glass and the deployment pipeline.
+exempt_principal_arns = [
+  "arn:aws:iam::*:role/break-glass",
+  "arn:aws:iam::*:role/terraform-deploy",
+]
+
+protected_role_names = ["security-hub-remediation*"]
+
+# Leave empty to skip the region guardrail.
+allowed_regions = ["eu-central-1", "eu-west-1"]
