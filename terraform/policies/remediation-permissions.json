@@ -6,6 +6,7 @@
       "Effect": "Allow",
       "Action": [
         "ec2:DescribeInstances",
+        "ec2:DescribeNetworkInterfaces",
         "ec2:DescribeSecurityGroupRules",
         "ec2:DescribeSecurityGroups",
         "ec2:DescribeTags",
@@ -29,9 +30,12 @@
       "Resource": "*"
     },
     {
-      "Sid": "CloseAdminPorts",
+      "Sid": "RevokeSecurityGroupRules",
       "Effect": "Allow",
-      "Action": "ec2:RevokeSecurityGroupIngress",
+      "Action": [
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress"
+      ],
       "Resource": "arn:*:ec2:*:*:security-group/*"
     },
     {
