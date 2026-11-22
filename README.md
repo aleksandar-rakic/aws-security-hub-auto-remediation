@@ -156,6 +156,10 @@ terraform -chdir=terraform/remediation apply -var region=eu-central-1 \
 Instance quarantine is enabled separately with `-var quarantine_enabled=true`, after the
 incident-response team has agreed on it.
 
+Each stack has a `terraform.tfvars.example` to copy. The rollout order, replaying failed
+events from the dead-letter queue, undoing a change and releasing a quarantined instance
+are in [docs/operations.md](docs/operations.md).
+
 ### Configuration
 
 | Variable | Default | |
