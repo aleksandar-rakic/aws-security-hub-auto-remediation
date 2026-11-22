@@ -66,6 +66,7 @@ flowchart LR
 | [S3.5](https://docs.aws.amazon.com/securityhub/latest/userguide/s3-controls.html#s3-5) | A bucket accepts requests without TLS | Append a `Deny` on `aws:SecureTransport = false` to the bucket policy; existing statements are kept |
 | [EC2.2](https://docs.aws.amazon.com/securityhub/latest/userguide/ec2-controls.html#ec2-2) | A VPC default security group has rules | Remove all its rules, but only when no network interface uses the group; otherwise the finding says which interfaces to move first |
 | [EC2.1](https://docs.aws.amazon.com/securityhub/latest/userguide/ec2-controls.html#ec2-1) | EBS snapshots in the account are publicly restorable | Remove the `all` group from `createVolumePermission` on each public snapshot in the region; sharing with specific accounts is kept |
+| [EC2.8](https://docs.aws.amazon.com/securityhub/latest/userguide/ec2-controls.html#ec2-8) | An instance allows IMDSv1 | Set `HttpTokens=required`, but only when CloudWatch `MetadataNoToken` shows no IMDSv1 calls in the last 14 days; otherwise the finding asks for the software to be updated first |
 | GuardDuty, HIGH / CRITICAL, `AwsEc2Instance` | An instance is likely compromised | **Opt-in.** Snapshot its EBS volumes, move it into a no-traffic security group, tag it with its previous groups. The instance keeps running for forensics. |
 
 Adding a control is one function in [`remediator/src/remediator/actions.py`](remediator/src/remediator/actions.py),
