@@ -388,6 +388,30 @@ def require_imdsv2(ctx: Context, finding: Finding) -> Outcome:
     )
 
 
+# SQS.1 - Amazon SQS queues should be encrypted at rest
+
+
+def encrypt_queue(ctx: Context, finding: Finding) -> Outcome:
+    # The resource ID is the queue ARN: arn:aws:sqs:<region>:<account>:<name>
+    _, _, _, _, owner, name = finding.resource_id.split(":", 5)
+    sqs = ctx.client("sqs")
+    url = sqs.get_queue_url(QueueName=name, QueueOwnerAWSAccountId=owner)["QueueUrl"]
+    ctx.check_exemption(sqs.list_queue_tags(QueueUrl=url).get("Tags", {}), f"queue {name}")
+
+    attributes = sqs.get_queue_attributes(
+        QueueUrl=url, AttributeNames=["KmsMasterKeyId", "SqsManagedSseEnabled"]
+    ).get("Attributes", {})
+    if attributes.get("KmsMasterKeyId"):
+        return Outcome(False, f"queue {name} is already encrypted with a KMS key")
+    if attributes.get("SqsManagedSseEnabled", "").lower() == "true":
+        return Outcome(False, f"queue {name} already uses SQS-managed encryption")
+
+    # SSE-SQS needs no key policy changes, so producers and consumers keep working.
+    if not ctx.dry_run:
+        sqs.set_queue_attributes(QueueUrl=url, Attributes={"SqsManagedSseEnabled": "true"})
+    return Outcome(True, f"turned on SQS-managed server-side encryption for queue {name}")
+
+
 CONTROL_ACTIONS: dict[str, Action] = {
     "S3.1": block_account_public_access,
     "S3.8": block_bucket_public_access,
@@ -401,6 +425,7 @@ CONTROL_ACTIONS: dict[str, Action] = {
     "EC2.2": empty_default_security_group,
     "EC2.1": make_snapshots_private,
     "EC2.8": require_imdsv2,
+    "SQS.1": encrypt_queue,
 }
 
 

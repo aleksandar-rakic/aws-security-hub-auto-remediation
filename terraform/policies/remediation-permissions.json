@@ -19,7 +19,10 @@
         "s3:GetAccountPublicAccessBlock",
         "s3:GetBucketPolicy",
         "s3:GetBucketPublicAccessBlock",
-        "s3:GetBucketTagging"
+        "s3:GetBucketTagging",
+        "sqs:GetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:ListQueueTags"
       ],
       "Resource": "*"
     },
@@ -82,6 +85,12 @@
       "Effect": "Allow",
       "Action": "ec2:ModifyInstanceMetadataOptions",
       "Resource": "arn:*:ec2:*:*:instance/*"
+    },
+    {
+      "Sid": "EncryptQueues",
+      "Effect": "Allow",
+      "Action": "sqs:SetQueueAttributes",
+      "Resource": "arn:*:sqs:*:*:*"
     }
   ]
 }
