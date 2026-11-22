@@ -96,7 +96,7 @@ remediator/                      Lambda (Python 3.13, boto3 from the runtime)
   src/remediator/handler.py      event loop, sessions per account/region, finding updates
   src/remediator/actions.py      one idempotent function per control
   src/remediator/quarantine.py   GuardDuty EC2 isolation (opt-in)
-  tests/                         pytest + moto, 28 tests, no AWS account needed
+  tests/                         pytest + moto, no AWS account needed
 terraform/
   remediation/                   Lambda, EventBridge rules, DLQ, alarms, IAM
   member-role/                   role assumed in each member account
@@ -152,7 +152,7 @@ incident-response team has agreed on it.
 
 | Variable | Default | |
 | --- | --- | --- |
-| `controls` | all supported | Which controls are remediated |
+| `controls` | `null` (all supported) | Which controls are remediated |
 | `dry_run` | `true` | Report only |
 | `quarantine_enabled` | `false` | Isolate instances on HIGH/CRITICAL GuardDuty findings |
 | `member_role_name` | `""` | Role to assume in other accounts; empty means own account only |

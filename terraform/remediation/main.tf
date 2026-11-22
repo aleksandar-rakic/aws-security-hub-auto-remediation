@@ -14,7 +14,7 @@ locals {
       findings = {
         Compliance = {
           Status            = ["FAILED"]
-          SecurityControlId = var.controls
+          SecurityControlId = local.controls
         }
         Workflow    = { Status = ["NEW"] }
         RecordState = ["ACTIVE"]
