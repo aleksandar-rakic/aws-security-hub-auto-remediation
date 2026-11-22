@@ -1,0 +1,25 @@
+[project]
+name = "security-hub-remediator"
+version = "0.1.0"
+description = "Lambda that remediates selected AWS Security Hub findings"
+requires-python = ">=3.13"
+license = "MIT"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "BLE"]
+ignore = ["BLE001"] # handler.handle reports any action error on the finding by design
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S104", "E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["remediator", "conftest"]
