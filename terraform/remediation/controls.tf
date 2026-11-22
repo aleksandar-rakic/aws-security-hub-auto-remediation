@@ -14,6 +14,7 @@ locals {
     "S3.1",
     "S3.5",
     "S3.8",
+    "SQS.1",
   ]
 
   controls = coalesce(var.controls, local.supported_controls)
