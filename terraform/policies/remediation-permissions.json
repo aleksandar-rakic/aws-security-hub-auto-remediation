@@ -5,6 +5,7 @@
       "Sid": "ReadStateAndExemptionTags",
       "Effect": "Allow",
       "Action": [
+        "cloudwatch:GetMetricStatistics",
         "ec2:DescribeInstances",
         "ec2:DescribeNetworkInterfaces",
         "ec2:DescribeSecurityGroupRules",
@@ -75,6 +76,12 @@
       "Effect": "Allow",
       "Action": "ec2:ModifySnapshotAttribute",
       "Resource": "arn:*:ec2:*::snapshot/*"
+    },
+    {
+      "Sid": "RequireImdsV2",
+      "Effect": "Allow",
+      "Action": "ec2:ModifyInstanceMetadataOptions",
+      "Resource": "arn:*:ec2:*:*:instance/*"
     }
   ]
 }

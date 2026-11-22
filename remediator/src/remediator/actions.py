@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -335,6 +336,58 @@ def make_snapshots_private(ctx: Context, finding: Finding) -> Outcome:
     )
 
 
+# EC2.8 - EC2 instances should use Instance Metadata Service Version 2 (IMDSv2)
+
+IMDSV1_LOOKBACK = timedelta(days=14)
+
+
+def _imdsv1_calls(cloudwatch: Any, instance_id: str) -> int:
+    """IMDSv1 requests the instance made recently (CloudWatch MetadataNoToken)."""
+    end = datetime.now(UTC)
+    datapoints = cloudwatch.get_metric_statistics(
+        Namespace="AWS/EC2",
+        MetricName="MetadataNoToken",
+        Dimensions=[{"Name": "InstanceId", "Value": instance_id}],
+        StartTime=end - IMDSV1_LOOKBACK,
+        EndTime=end,
+        Period=86400,
+        Statistics=["Sum"],
+    )["Datapoints"]
+    return int(sum(d["Sum"] for d in datapoints))
+
+
+def require_imdsv2(ctx: Context, finding: Finding) -> Outcome:
+    instance_id = finding.resource_name
+    ec2 = ctx.client("ec2")
+    reservations = ec2.describe_instances(InstanceIds=[instance_id])["Reservations"]
+    instance = reservations[0]["Instances"][0]
+    ctx.check_exemption(_tags(instance.get("Tags", [])), f"instance {instance_id}")
+
+    options = instance.get("MetadataOptions", {})
+    if options.get("HttpTokens") == "required" or options.get("HttpEndpoint") == "disabled":
+        return Outcome(False, f"{instance_id} already requires IMDSv2")
+
+    # Turning IMDSv1 off under software that still uses it breaks that software
+    # (credentials, region lookup). Only switch instances that have not used it.
+    calls = _imdsv1_calls(ctx.client("cloudwatch"), instance_id)
+    if calls:
+        days = IMDSV1_LOOKBACK.days
+        raise Skipped(
+            f"{instance_id} made {calls} IMDSv1 request(s) in the last {days} days; "
+            "update its SDKs or agents first (CloudWatch metric MetadataNoToken)"
+        )
+
+    if not ctx.dry_run:
+        ec2.modify_instance_metadata_options(
+            InstanceId=instance_id, HttpTokens="required", HttpEndpoint="enabled"
+        )
+    return Outcome(
+        True,
+        f"set HttpTokens=required on {instance_id} "
+        f"(no IMDSv1 requests in the last {IMDSV1_LOOKBACK.days} days)",
+    )
+
+
 CONTROL_ACTIONS: dict[str, Action] = {
     "S3.1": block_account_public_access,
     "S3.8": block_bucket_public_access,
@@ -347,6 +400,7 @@ CONTROL_ACTIONS: dict[str, Action] = {
     "S3.5": require_tls,
     "EC2.2": empty_default_security_group,
     "EC2.1": make_snapshots_private,
+    "EC2.8": require_imdsv2,
 }
 
 
