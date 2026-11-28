@@ -22,7 +22,7 @@ the disruptive action (isolating an EC2 instance) is a separate opt-in.
 ```mermaid
 flowchart LR
     subgraph member["Member accounts"]
-        R[("S3 · EC2 · KMS")]
+        R[("S3 · EC2 · RDS · KMS · SQS · ECR")]
         MR["member role<br/><sub>terraform/member-role</sub>"]
     end
 
@@ -202,6 +202,19 @@ done
 The Python tests run every action against [moto](https://github.com/getmoto/moto) and check
 both the resource state and the note written to the finding. The Terraform tests plan
 against a mocked provider, so neither suite needs AWS credentials.
+
+## Scope
+
+This is a reference implementation written for this repository. It comes from remediating
+Security Hub findings by hand in Terraform on a production multi-account AWS platform:
+GuardDuty across the organization, IMDSv2, AWS Config, IAM Access Analyzer and service
+control policies. This repository turns those fixes into event-driven automation.
+
+What has been checked is the code against moto and the Terraform plans against a mocked
+provider. It has not been deployed to a production organization from this repository, so
+"within seconds" describes the event path (Security Hub import, EventBridge, one Lambda
+invocation), not a measured latency. Start in dry run, as described above, and read the
+notes on the findings before letting it change anything.
 
 ## Limits
 
