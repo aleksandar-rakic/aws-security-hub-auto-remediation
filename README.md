@@ -10,7 +10,7 @@ SCP guardrails that keep the detection services and the remediation itself from 
 switched off.
 
 A failed control (an S3 bucket open to the public, SSH open to the internet, an unrotated
-KMS key) is fixed within seconds of Security Hub importing the finding. Every outcome is
+KMS key) is fixed as soon as Security Hub imports the finding, without waiting for a ticket. Every outcome is
 written back onto the finding, so the Security Hub console is the audit trail: what was
 changed, what was skipped and why, what failed.
 
@@ -211,9 +211,8 @@ GuardDuty across the organization, IMDSv2, AWS Config, IAM Access Analyzer and s
 control policies. This repository turns those fixes into event-driven automation.
 
 What has been checked is the code against moto and the Terraform plans against a mocked
-provider. It has not been deployed to a production organization from this repository, so
-"within seconds" describes the event path (Security Hub import, EventBridge, one Lambda
-invocation), not a measured latency. Start in dry run, as described above, and read the
+provider. It has not been deployed to a production organization from this repository, and
+no remediation latency has been measured. Start in dry run, as described above, and read the
 notes on the findings before letting it change anything.
 
 ## Limits
